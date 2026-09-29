@@ -9,22 +9,17 @@ A simulated RFID door lock system designed for an Information Security and IoT c
    brew install mysql
    brew services start mysql
    ```
-2. **Create the Database:**
-   Log into MySQL (`mysql -u root -p`) and create the database:
-   ```sql
-   CREATE DATABASE rfid_lock;
-   ```
-3. **Configure Environment:**
-   Copy the example environment file and update your MySQL credentials if needed:
+2. **Configure Environment:**
+   Copy the example environment file:
    ```bash
    cp .env.example .env
    ```
-4. **Install Dependencies & Initialize:**
+3. **Install Dependencies & Initialize:**
    ```bash
    npm install
    npm run db:init
    ```
-   *(Note: `db:init` drops and recreates tables, then seeds users into the database and generates `card/wallet.json`.)*
+   *(Note: `db:init` automatically creates the database, drops/recreates tables, seeds users, and generates `card/wallet.json`.)*
 
 ## 2. How to Run & Demo Script
 

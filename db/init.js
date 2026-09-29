@@ -18,12 +18,22 @@ import fs       from 'node:fs/promises';
 import path     from 'node:path';
 import crypto   from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import mysql    from 'mysql2/promise';
 import { pool } from '../server/db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
   console.log('[DB Init] Starting provisioning...');
+
+  console.log('[DB Init] Creating database if it does not exist...');
+  const setupConn = await mysql.createConnection({
+    host: process.env.DB_HOST || '127.0.0.1',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || ''
+  });
+  await setupConn.query(`CREATE DATABASE IF NOT EXISTS \`${process.env.DB_NAME || 'rfid_lock'}\``);
+  await setupConn.end();
 
   // 1. Read and execute the schema
   const schemaPath = path.join(__dirname, 'schema.sql');

@@ -157,6 +157,7 @@ async function handleFixed(uid, challengeId, response, deny, grant) {
   const [rows] = await pool.query('SELECT * FROM nonces WHERE id = ?', [challengeId]);
   if (!rows.length)                               return deny('unknown challenge');
   const nonce = rows[0];
+  if (new Date(nonce.expires_at) < new Date())     return deny('nonce expired');
 
   // Step 2 – look up the card
   const [cards] = await pool.query('SELECT * FROM cards WHERE uid = ?', [uid]);
@@ -178,12 +179,12 @@ async function handleFixed(uid, challengeId, response, deny, grant) {
 
   // ┌─────────────────────────────────────────────────────────────────────┐
   // │  FIX: atomically consume the nonce.                                │
-  // │  The WHERE clause checks used=0 AND expires_at > NOW(3).           │
+  // │  The WHERE clause checks used=0.                                   │
   // │  InnoDB's row lock serialises concurrent UPDATEs: only the first   │
   // │  request sees affectedRows=1, all others see 0 → denied.          │
   // └─────────────────────────────────────────────────────────────────────┘
   const [upd] = await pool.query(
-    'UPDATE nonces SET used = 1 WHERE id = ? AND used = 0 AND expires_at > NOW(3)',
+    'UPDATE nonces SET used = 1 WHERE id = ? AND used = 0',
     [challengeId]
   );
   if (upd.affectedRows !== 1) return deny('nonce reused');          // FIX
