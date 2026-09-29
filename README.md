@@ -1,6 +1,6 @@
 # RFID Lock
 
-A simulated RFID door lock system designed for an Information Security and IoT capstone, demonstrating hardware token emulation, authentication evolution across multiple security modes (plain UID, hashed secrets, challenge-response), and vulnerability analysis against cloning, replay, and relay attacks.
+A simulated RFID door lock system designed for an Information Security and IoT capstone, demonstrating hardware token emulation, authentication evolution across multiple security modes (plain UID, UID + timestamp, and HMAC challenge-response), and vulnerability analysis against cloning, replay, and race-condition attacks.
 
 ## 1. Prerequisites & Setup (macOS)
 
@@ -59,7 +59,7 @@ Open **four** separate terminal windows in the project root:
    ```
    *Expected Output:*
    ```text
-   [Attacker] Cloned UID AA:BB:CC:DD to /path/to/attacker/cloned-card.json
+   [Attacker] Cloned UID AA:BB:CC:DD to /Users/hardik/mac_only/Programs/rfid-lock/attacker/cloned-card.json
    ```
 
 4. **Terminal 4 (Attacker):** Replay the cloned card against the door:
@@ -108,7 +108,7 @@ Open **four** separate terminal windows in the project root:
    ```
    *Expected Output:*
    ```text
-   [Attacker] Forging fresh timestamp for v2 scan: { uid: 'AA:BB:CC:DD', ts: '2026-09-29T11:05:12.123Z' }
+   [Attacker] Forging fresh timestamp for v2 scan: { uid: 'AA:BB:CC:DD', ts: '2026-09-29T10:59:46.735Z' }
    [Attacker] Result: HTTP 200 {"result":"granted","reason":"granted","uid":"AA:BB:CC:DD","mode":"v2"}
    ```
    *(Access granted! Timestamp-only freshness without authentication fails completely).*
@@ -128,7 +128,7 @@ Open **four** separate terminal windows in the project root:
    [Card] Using admin card (UID: AA:BB:CC:DD)
    [Card] Target: http://127.0.0.1:3001  Mode: v3
    [Card] GET http://127.0.0.1:3001/api/v3/challenge?readerId=R1
-   [Card] Received challenge: { challengeId: '...', nonce: '...', expiresAt: '...' }
+   [Card] Received challenge: { challengeId: 'c3f191bb9f1a0e14db086cbde22bf731', nonce: '5a2f5a6b093685d03a11956555138139', expiresAt: '2026-09-29T11:05:00.000Z' }
    [Card] POST http://127.0.0.1:3001/api/v3/scan
    [Card] Reader responded HTTP 200: {"result":"granted","reason":"granted","uid":"AA:BB:CC:DD","mode":"v3"}
    ```
@@ -139,15 +139,15 @@ Open **four** separate terminal windows in the project root:
    ```
    *Expected Output:*
    ```text
-   [Attacker] Replaying v3 scan...
-   [Attacker] Result: HTTP 200 {"result":"denied","reason":"challenge already used","uid":"AA:BB:CC:DD","mode":"v3"}
+   [Attacker] Replaying v3 scan: { uid: 'AA:BB:CC:DD', challengeId: 'c3f191bb9f1a0e14db086cbde22bf731', response: '...' }
+   [Attacker] Result: HTTP 200 {"result":"denied","reason":"nonce reused","uid":"AA:BB:CC:DD","mode":"v3"}
    ```
    *(Blocked! The nonce was marked as consumed when the card tapped).*
 
 ---
 
 #### Attack D: Mode 3 — TOCTOU Race Condition Exploit (Vulnerable Mode)
-*Vulnerability:* The server checks `SELECT used FROM challenges WHERE id = ?` and later updates `UPDATE challenges SET used=1`. A 20ms I/O latency window allows concurrent requests using the same nonce to be accepted before the database flags it used.
+*Vulnerability:* The server checks `SELECT used FROM nonces WHERE id = ?` and later updates `UPDATE nonces SET used = 1 WHERE id = ?`. A 20ms I/O latency window allows concurrent requests using the same nonce to pass validation before the database flags it as used.
 
 1. **Configure Vulnerability State:** On the Dashboard, set **Race Condition Flaw** to **VULNERABLE** (default).
 2. **Terminal 2 (Proxy):** Stop the proxy (`Ctrl+C`) and start it in **hold mode**:
@@ -171,7 +171,7 @@ Open **four** separate terminal windows in the project root:
    [Card] POST http://127.0.0.1:3001/api/v3/scan ...
    [Card] Reader responded HTTP 504: {"error":"reader timeout"}
    ```
-   *(Terminal 2 will log `[Proxy] HOLDING v3 scan request. Will not forward to server.`. The attacker now has a valid, UNCONSUMED challenge-response token!)*
+   *(Terminal 2 logs `[Proxy] HOLDING v3 scan request. Will not forward to server.`. The attacker now has a valid, UNCONSUMED challenge-response token!)*
 
 4. **Terminal 4 (Attacker):** Fire 10 parallel requests using the held token:
    ```bash
@@ -182,12 +182,16 @@ Open **four** separate terminal windows in the project root:
    [Attacker] Firing 10 parallel v3 requests using intercepted nonce...
    [Attacker] Race complete. Requests granted: 2 out of 10
    ```
-   *(Or even more, e.g., 2–10 out of 10 granted! Check Terminal 1 or Dashboard audit log to observe multiple "granted" entries for the exact same challenge).*
+   *(Multiple requests are granted access concurrently for a single issued challenge nonce!)*
 
 ---
 
 #### Attack E: Mode 3 — Atomic Mitigation Verification (Fixed Mode)
-*Fix:* In fixed mode, the server uses an atomic statement: `UPDATE challenges SET used = 1 WHERE id = ? AND used = 0`. Only the single request that alters 1 row gets access; all others get `affectedRows === 0` and are denied.
+*Fix:* In fixed mode, the application checks challenge expiration in Node.js (`new Date(nonce.expires_at) >= new Date()`) and then atomically consumes the nonce via SQL:
+```sql
+UPDATE nonces SET used = 1 WHERE id = ? AND used = 0
+```
+InnoDB's row-level lock serializes concurrent updates: only the first request changes a row (`affectedRows === 1`); all concurrent requests see `affectedRows === 0` and are denied.
 
 1. **Configure Vulnerability State:** On the Dashboard, toggle **Race Condition Flaw** to **FIXED**.
 2. **Terminal 2 (Proxy):** Keep running `npm run proxy:hold` (or restart it if stopped).
@@ -211,7 +215,7 @@ Open **four** separate terminal windows in the project root:
 ---
 
 #### Attack F: Tamper-Evident Audit Log Detection
-*Mechanism:* Each event log row includes a SHA-256 hash computed over `(id, timestamp, event_type, uid, result, reason, prev_hash)`.
+*Mechanism:* Each event log row in the `events` table includes a SHA-256 hash computed over `(prev_hash, ts, mode, uid, result, reason)`.
 
 1. **Terminal 4 (Attacker):** Simulate database tampering (e.g., an insider modifying a denied scan to granted):
    ```bash
@@ -220,14 +224,14 @@ Open **four** separate terminal windows in the project root:
    *Expected Output:*
    ```text
    [Attacker] Connecting to database...
-   [Attacker] Found denied event ID 25. Changing to 'granted'...
-   [Attacker] Row 25 tampered! The hash chain is now broken.
+   [Attacker] Found denied event ID 4. Changing to 'granted'...
+   [Attacker] Row 4 tampered! The hash chain is now broken.
    ```
 
 2. **Dashboard Verification:**
    - In your browser dashboard (http://127.0.0.1:3000), click the **"Verify Hash Chain"** button.
-   - *Expected Display:* Banner turns red: `Hash Chain Integrity: BROKEN at Event ID 25`.
-   *(Or test via curl: `curl http://127.0.0.1:3000/api/audit/verify`)*
+   - *Expected Display:* Banner turns red: `Hash Chain Integrity: BROKEN at Event ID 4`.
+   *(Or test via curl: `curl http://127.0.0.1:3000/api/events/verify`)*
 
 ## 3. Module Overview
 
