@@ -1,0 +1,82 @@
+<!--
+  ─────────────────────────────────────────────────────────────────────────────
+  public/index.html – Lock Monitoring Dashboard
+  
+  Provides a live view of the door state, the active authentication mode,
+  and the cryptographic audit log.
+  
+  Security concept: IoT Human-Machine Interface (HMI) for security auditing.
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RFID Lock Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header>
+    <h1>RFID Lock Security Monitor</h1>
+    
+    <div class="door-status">
+      <h2>Door Status: <span id="doorState" class="state-LOCKED">LOCKED</span></h2>
+      <p>Since: <span id="doorSince">-</span></p>
+    </div>
+  </header>
+
+  <main>
+    <section class="config-panel">
+      <h3>System Configuration</h3>
+      <div class="controls">
+        <label>
+          Active Mode:
+          <select id="modeSelect">
+            <option value="v1">v1 (Plain UID)</option>
+            <option value="v2">v2 (UID + Timestamp)</option>
+            <option value="v3">v3 (HMAC Challenge-Response)</option>
+          </select>
+        </label>
+        
+        <label>
+          Race Vulnerability (v3):
+          <select id="raceSelect">
+            <option value="true">VULNERABLE (Simulate I/O Latency)</option>
+            <option value="false">FIXED (Atomic Consume)</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="audit-panel">
+      <div class="audit-header">
+        <h3>Cryptographic Audit Log</h3>
+        <div class="verify-controls">
+          <button id="verifyBtn">Verify Hash Chain</button>
+          <span id="verifyBadge" class="badge">Unverified</span>
+        </div>
+      </div>
+      
+      <table id="eventsTable">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Timestamp</th>
+            <th>Mode</th>
+            <th>UID</th>
+            <th>Result</th>
+            <th>Reason</th>
+            <th>Row Hash (Truncated)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Populated by app.js -->
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

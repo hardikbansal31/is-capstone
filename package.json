@@ -1,0 +1,22 @@
+{
+  "name": "rfid-lock",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "proxy": "node attacker/proxy.js",
+    "proxy:hold": "node attacker/proxy.js --hold-v3",
+    "card": "node card/card.js",
+    "attack": "node attacker/attack.js",
+    "db:init": "node db/init.js",
+    "test": "node test/matrix.js"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "mysql2": "^3.24.4"
+  }
+}

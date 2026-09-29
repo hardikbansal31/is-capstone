@@ -1,0 +1,6 @@
+node_modules
+.env
+attacker/capture.jsonl
+attacker/cloned-card.json
+card/wallet.json
+.DS_Store
