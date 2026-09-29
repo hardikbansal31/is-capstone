@@ -30,14 +30,25 @@ const LISTEN_PORT = 3001;
 const holdV3 = process.argv.includes('--hold-v3');
 
 /** Write an intercepted transaction to the log. */
-function logTransaction(req, reqBody, status, resBody) {
+function safeJsonParse(buf) {
+  if (!buf || buf.length === 0) return null;
+  const str = buf.toString().trim();
+  if (!str) return null;
+  try {
+    return JSON.parse(str);
+  } catch {
+    return str;
+  }
+}
+
+function logTransaction(req, reqBuffer, status, resBuffer) {
   const entry = {
     timestamp: new Date().toISOString(),
     method: req.method,
     url: req.url,
-    reqBody: reqBody ? JSON.parse(reqBody.toString()) : null,
+    reqBody: safeJsonParse(reqBuffer),
     resStatus: status,
-    resBody: resBody ? JSON.parse(resBody.toString()) : null
+    resBody: safeJsonParse(resBuffer)
   };
   fs.appendFileSync(capturePath, JSON.stringify(entry) + '\n');
   console.log(`[Proxy] Captured ${req.method} ${req.url}`);
